@@ -1,0 +1,19 @@
+# Игнорировать кэш Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# Игнорировать большие данные при сборке
+data/raw/*.pkl
+data/processed/*
+data/results/*
+
+# Игнорировать системные файлы Windows
+Thumbs.db
+.DS_Store
+*.log
