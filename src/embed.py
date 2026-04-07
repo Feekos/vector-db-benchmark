@@ -131,8 +131,8 @@ def prepare_dataset(
     df.to_pickle(processed_path)
     np.save(embeddings_path, question_embeddings)
     
-    logger.info(f"✓ Датасет сохранён: {processed_path}")
-    logger.info(f"✓ Эмбеддинги вопросов: {embeddings_path}")
+    logger.info(f"Датасет сохранён: {processed_path}")
+    logger.info(f"Эмбеддинги вопросов: {embeddings_path}")
     logger.info(f"  Размерность: {question_embeddings.shape}")
     
     return df, question_embeddings
