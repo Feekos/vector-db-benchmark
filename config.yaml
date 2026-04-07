@@ -1,0 +1,62 @@
+benchmark:
+  datasets:
+    - name: ru_rag_test
+      path: data/raw/ru_rag_test_dataset.pkl
+      question_column: "Вопрос"
+      context_column: "Контекст"
+      answer_column: "Правильный ответ"
+      file_column: "Название файла"
+  
+  embedding:
+    model: "cointegrated/rubert-tiny2"
+    dim: 1024
+    normalize: true
+    batch_size: 32
+    device: "cuda"
+  
+  search:
+    top_k: 10
+    metrics: ["recall@1", "recall@5", "recall@10", "MRR", "latency"]
+    warmup_queries: 10 
+  
+  databases:
+    pgvectorscale:
+      enabled: true
+      host: "localhost"
+      port: 5432
+      index:
+        type: "diskann"
+        params:
+          max_neighbors: 50
+          l_value: 200
+          ef_search: 200
+          storage_layout: "disk"
+    
+    milvus:
+      enabled: true
+      host: "localhost"
+      port: 19530
+      index:
+        type: "HNSW"
+        params:
+          M: 16
+          efConstruction: 200
+          ef: 200
+    
+    qdrant:
+      enabled: true
+      host: "localhost"
+      port: 6333
+      grpc: true
+      index:
+        type: "HNSW"
+        params:
+          m: 16
+          ef_construct: 200
+          ef_search: 200
+        quantization: "binary"
+
+  output:
+    results_dir: "data/results"
+    save_raw: true
+    report_format: ["csv", "markdown", "json"]
