@@ -62,9 +62,9 @@ def main():
             if not run_cmd(f"python -m src.embed --config {args.config}", "Генерация эмбеддингов"):
                 sys.exit(1)
         else:
-            print("⏭ Эмбеддинги уже сгенерированы (data/processed/)")
+            print("\nЭмбеддинги уже сгенерированы (data/processed/)")
     else:
-        print("⏭ Пропуск генерации эмбеддингов")
+        print("\nПропуск генерации эмбеддингов")
 
     # Загрузка данных в БД
     if not args.skip_load:
