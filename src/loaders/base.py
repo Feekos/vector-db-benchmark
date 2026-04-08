@@ -21,6 +21,7 @@ class BaseLoader(ABC):
         self.db_config = db_config
         self.connected = False
         self.collection_ready = False
+        self.index_build_time_seconds = 0.0  # Время построения индекса
         
     @abstractmethod
     def connect(self) -> bool:
@@ -91,5 +92,6 @@ class BaseLoader(ABC):
         return {
             "connected": self.connected,
             "collection_ready": self.collection_ready,
-            "record_count": self.count_records() if self.connected else 0
+            "record_count": self.count_records() if self.connected else 0,
+            "index_build_time_seconds": self.index_build_time_seconds
         }

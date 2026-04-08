@@ -8,7 +8,7 @@ import numpy as np
 sys.path.insert(0, str(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from src.loaders.base import BaseLoader
-from src.utils import logger
+from src.utils import logger, Timer
 
 try:
     from qdrant_client import QdrantClient, models
@@ -83,26 +83,29 @@ class QdrantLoader(BaseLoader):
                 )
             
             # Создание/пересоздание коллекции
-            self.client.recreate_collection(
-                collection_name=self.collection_name,
-                vectors_config=models.VectorParams(
-                    size=emb_dim,
-                    distance=models.Distance.COSINE,
-                    hnsw_config=models.HnswConfigDiff(
-                        m=index_cfg.get('params', {}).get('m', 16),
-                        ef_construct=index_cfg.get('params', {}).get('ef_construct', 200)
+            with Timer("Создание коллекции и индекса Qdrant") as timer:
+                self.client.recreate_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=models.VectorParams(
+                        size=emb_dim,
+                        distance=models.Distance.COSINE,
+                        hnsw_config=models.HnswConfigDiff(
+                            m=index_cfg.get('params', {}).get('m', 16),
+                            ef_construct=index_cfg.get('params', {}).get('ef_construct', 200)
+                        ),
+                        quantization_config=quant_config,
+                        on_disk=index_cfg.get('on_disk', False)
                     ),
-                    quantization_config=quant_config,
-                    on_disk=index_cfg.get('on_disk', False)
-                ),
-                optimizers_config=models.OptimizersConfigDiff(
-                    default_segment_number=4,
-                    memmap_threshold=20000 if index_cfg.get('on_disk') else None
+                    optimizers_config=models.OptimizersConfigDiff(
+                        default_segment_number=4,
+                        memmap_threshold=20000 if index_cfg.get('on_disk') else None
+                    )
                 )
-            )
+            
+            self.index_build_time_seconds = timer.elapsed
             
             self.collection_ready = True
-            logger.info(f"Коллекция создана: {self.collection_name}")
+            logger.info(f"Коллекция создана: {self.collection_name} (индекс: {timer})")
             return True
             
         except Exception as e:

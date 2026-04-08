@@ -8,7 +8,7 @@ import json
 sys.path.insert(0, str(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from src.loaders.base import BaseLoader
-from src.utils import logger
+from src.utils import logger, Timer
 
 try:
     import psycopg
@@ -84,25 +84,28 @@ class PGVectorScaleLoader(BaseLoader):
                 """)
                 
                 # Создание индекса для ускорения поиска
-                index_type = self.index_params.get('type', 'ivfflat')
-                if index_type == 'hnsw':
-                    cur.execute(f"""
-                        CREATE INDEX idx_{self.table_name}_embedding 
-                        ON {self.table_name} 
-                        USING hnsw (embedding vector_cosine_ops)
-                        WITH (m = {self.index_params.get('m', 16)}, ef_construction = {self.index_params.get('ef_construction', 64)})
-                    """)
-                else:
-                    cur.execute(f"""
-                        CREATE INDEX idx_{self.table_name}_embedding 
-                        ON {self.table_name} 
-                        USING ivfflat (embedding vector_cosine_ops)
-                        WITH (lists = 100)
-                    """)
+                with Timer("Создание индекса pgvectorscale") as timer:
+                    index_type = self.index_params.get('type', 'ivfflat')
+                    if index_type == 'hnsw':
+                        cur.execute(f"""
+                            CREATE INDEX idx_{self.table_name}_embedding 
+                            ON {self.table_name} 
+                            USING hnsw (embedding vector_cosine_ops)
+                            WITH (m = {self.index_params.get('m', 16)}, ef_construction = {self.index_params.get('ef_construction', 64)})
+                        """)
+                    else:
+                        cur.execute(f"""
+                            CREATE INDEX idx_{self.table_name}_embedding 
+                            ON {self.table_name} 
+                            USING ivfflat (embedding vector_cosine_ops)
+                            WITH (lists = 100)
+                        """)
+                
+                self.index_build_time_seconds = timer.elapsed
                 
                 self.conn.commit()
                 self.collection_ready = True
-                logger.info(f"Таблица и индекс созданы: {self.table_name}")
+                logger.info(f"Таблица и индекс созданы: {self.table_name} (индекс: {timer})")
                 return True
                 
         except Exception as e:

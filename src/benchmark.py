@@ -5,6 +5,7 @@ import time
 import argparse
 import numpy as np
 import pandas as pd
+import json
 from pathlib import Path
 from typing import Dict, List, Optional
 from tqdm import tqdm
@@ -36,7 +37,8 @@ class BenchmarkRunner:
         db_name: str,
         question_embeddings: np.ndarray,
         ground_truth_ids: List[str],
-        output_dir: str
+        output_dir: str,
+        index_build_times: Dict[str, float] = None
     ) -> Dict:
         """Запуск бенчмарка для одной БД"""
         db_config = self.config['benchmark']['databases'].get(db_name)
@@ -96,10 +98,12 @@ class BenchmarkRunner:
             )
             
             # Формирование отчёта
+            index_build_time = index_build_times.get(db_name, 0.0) if index_build_times else 0.0
             report = {
                 "database": db_name,
                 "index_config": db_config.get('index', {}),
                 "metrics": aggregated.to_dict(),
+                "index_build_time_seconds": index_build_time,
                 "total_time_seconds": timer.elapsed,
                 "config_snapshot": {
                     "top_k": top_k,
@@ -126,6 +130,17 @@ class BenchmarkRunner:
         """Запуск бенчмарка для всех включённых БД"""
         ensure_dirs(output_dir)
         
+        # Загрузка времени индексации
+        index_build_times = {}
+        index_times_path = Path("data/processed/index_build_times.json")
+        if index_times_path.exists():
+            try:
+                with open(index_times_path, 'r') as f:
+                    index_build_times = json.load(f)
+                logger.info("📊 Загружены времена индексации из data/processed/index_build_times.json")
+            except Exception as e:
+                logger.warning(f"Не удалось загрузить времена индексации: {e}")
+        
         # Загрузка данных
         logger.info(f"📦 Загрузка данных: {dataset_path}")
         df = pd.read_pickle(dataset_path)
@@ -147,13 +162,13 @@ class BenchmarkRunner:
         # Запуск по каждой БД
         all_reports = []
         for db_name in self.SEARCHERS.keys():
-            report = self.run_single_db(db_name, question_emb, ground_truth_ids, output_dir)
+            report = self.run_single_db(db_name, question_emb, ground_truth_ids, output_dir, index_build_times)
             if report:
                 all_reports.append(report)
         
         # Сводный отчёт
         if all_reports:
-            summary_df = pd.DataFrame([r['metrics'] | {'database': r['database']} for r in all_reports])
+            summary_df = pd.DataFrame([r['metrics'] | {'database': r['database'], 'index_build_time_seconds': r.get('index_build_time_seconds', 0.0)} for r in all_reports])
             summary_path = save_results(
                 {"reports": all_reports, "summary": summary_df.to_dict('records')},
                 output_dir,
@@ -179,16 +194,17 @@ class BenchmarkRunner:
         # Таблица метрик
         lines.append("## 🎯 Сравнительные метрики")
         lines.append("")
-        lines.append("| Система | Recall@1 | Recall@5 | Recall@10 | MRR | p50 (ms) | p95 (ms) | p99 (ms) | QPS |")
-        lines.append("|---------|----------|----------|-----------|-----|----------|----------|----------|-----|")
+        lines.append("| Система | Recall@1 | Recall@5 | Recall@10 | MRR | p50 (ms) | p95 (ms) | p99 (ms) | QPS | Index Time (s) |")
+        lines.append("|---------|----------|----------|-----------|-----|----------|----------|----------|-----|---------------|")
         
         for r in reports:
             m = r['metrics']
+            index_time = r.get('index_build_time_seconds', 0.0)
             lines.append(
                 f"| {r['database']} | "
                 f"{m['recall_at_1']:.3f} | {m['recall_at_5']:.3f} | {m['recall_at_10']:.3f} | "
                 f"{m['mrr']:.3f} | {m['latency_p50']:.2f} | {m['latency_p95']:.2f} | "
-                f"{m['latency_p99']:.2f} | {m['qps']:.1f} |"
+                f"{m['latency_p99']:.2f} | {m['qps']:.1f} | {index_time:.2f} |"
             )
         
         lines.append("")
@@ -209,10 +225,12 @@ class BenchmarkRunner:
             best_recall = max(reports, key=lambda x: x['metrics']['recall_at_10'])
             best_latency = min(reports, key=lambda x: x['metrics']['latency_p99'])
             best_qps = max(reports, key=lambda x: x['metrics']['qps'])
+            best_index_time = min(reports, key=lambda x: x.get('index_build_time_seconds', float('inf')))
             
             lines.append(f"- 🎯 Лучший Recall@10: **{best_recall['database']}** ({best_recall['metrics']['recall_at_10']:.3f})")
             lines.append(f"- ⚡ Лучшая p99 latency: **{best_latency['database']}** ({best_latency['metrics']['latency_p99']:.2f} ms)")
             lines.append(f"- 🚀 Лучший QPS: **{best_qps['database']}** ({best_qps['metrics']['qps']:.1f})")
+            lines.append(f"- 🏗️ Быстрее всего индекс: **{best_index_time['database']}** ({best_index_time.get('index_build_time_seconds', 0):.2f} сек)")
         
         with open(os.path.join(output_dir, "report.md"), 'w', encoding='utf-8') as f:
             f.write('\n'.join(lines))

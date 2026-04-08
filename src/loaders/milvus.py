@@ -8,7 +8,7 @@ import numpy as np
 sys.path.insert(0, str(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from src.loaders.base import BaseLoader
-from src.utils import logger
+from src.utils import logger, Timer
 
 try:
     from pymilvus import connections, Collection, FieldSchema, CollectionSchema, DataType, utility
@@ -82,18 +82,21 @@ class MilvusLoader(BaseLoader):
             self.collection = Collection(self.collection_name, schema)
             
             # Создание индекса
-            index_params = {
-                "metric_type": self.index_params.get('metric_type', 'COSINE'),
-                "index_type": self.index_params.get('type', 'HNSW'),
-                "params": self.index_params.get('params', {"M": 16, "efConstruction": 200})
-            }
-            self.collection.create_index("embedding", index_params)
+            with Timer("Создание индекса Milvus") as timer:
+                index_params = {
+                    "metric_type": self.index_params.get('metric_type', 'COSINE'),
+                    "index_type": self.index_params.get('type', 'HNSW'),
+                    "params": self.index_params.get('params', {"M": 16, "efConstruction": 200})
+                }
+                self.collection.create_index("embedding", index_params)
+            
+            self.index_build_time_seconds = timer.elapsed
             
             # Загрузка в память для поиска
             self.collection.load()
             
             self.collection_ready = True
-            logger.info(f"Коллекция создана: {self.collection_name}")
+            logger.info(f"Коллекция создана: {self.collection_name} (индекс: {timer})")
             return True
             
         except Exception as e:
@@ -170,14 +173,17 @@ class MilvusLoader(BaseLoader):
         try:
             self.collection.flush()
             # Пересоздание индекса после загрузки всех данных
-            index_params = {
-                "metric_type": self.index_params.get('metric_type', 'COSINE'),
-                "index_type": self.index_params.get('type', 'HNSW'),
-                "params": self.index_params.get('params', {})
-            }
-            self.collection.create_index("embedding", index_params)
+            with Timer("Пересоздание индекса Milvus") as timer:
+                index_params = {
+                    "metric_type": self.index_params.get('metric_type', 'COSINE'),
+                    "index_type": self.index_params.get('type', 'HNSW'),
+                    "params": self.index_params.get('params', {})
+                }
+                self.collection.create_index("embedding", index_params)
+            
+            self.index_build_time_seconds += timer.elapsed
             self.collection.load()
-            logger.info("Индекс пересоздан и загружен в память")
+            logger.info(f"Индекс пересоздан и загружен в память: {timer}")
         except Exception as e:
             logger.warning(f"Не удалось оптимизировать индекс: {e}")
         
