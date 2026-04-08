@@ -124,12 +124,28 @@ class MilvusLoader(BaseLoader):
             stats["batches"] += 1
             
             try:
+                # Подготовка эмбеддингов
+                embeddings = []
+                for emb in batch['embedding'].values:
+                    if isinstance(emb, list):
+                        embeddings.append(emb)
+                    else:
+                        embeddings.append(emb.tolist() if hasattr(emb, 'tolist') else list(emb))
+                
+                # Получаем файлы если они есть
+                file_col = cols.get('file_column', '')
+                file_ids = []
+                if file_col and file_col in batch.columns:
+                    file_ids = batch[file_col].fillna('').astype(str).tolist()
+                else:
+                    file_ids = [''] * len(batch)
+                
                 # Подготовка данных для вставки
                 entities = [
                     [str(idx) for idx in batch.index],  # context_id
                     batch[cols['context_column']].fillna('').astype(str).tolist(),  # content
-                    batch.get(cols.get('file_column', ''), [''] * len(batch)).tolist(),  # file_id
-                    np.stack(batch['embedding'].values)  # embeddings
+                    file_ids,  # file_id
+                    embeddings  # embeddings as list of lists
                 ]
                 
                 # Вставка

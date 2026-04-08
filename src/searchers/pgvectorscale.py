@@ -13,6 +13,7 @@ from src.utils import logger
 
 try:
     import psycopg
+    from pgvector import Vector
     from pgvector.psycopg import register_vector
     PG_AVAILABLE = True
 except ImportError:
@@ -41,9 +42,6 @@ class PGVectorScaleSearcher(BaseSearcher):
                 autocommit=True
             )
             register_vector(self.conn)
-            # Установка параметров поиска
-            with self.conn.cursor() as cur:
-                cur.execute(f"SET vectorscale.diskann_ef_search = {self.ef_search}")
             self.connected = True
             return True
         except Exception as e:
@@ -66,6 +64,11 @@ class PGVectorScaleSearcher(BaseSearcher):
         
         try:
             with self.conn.cursor() as cur:
+                if self.ef_search:
+                    cur.execute(f"SET hnsw.ef_search = {int(self.ef_search)}")
+
+                query_vector = Vector(query_embedding)
+
                 # Поиск с использованием оператора <=> (cosine distance)
                 cur.execute(
                     f"""
@@ -74,7 +77,7 @@ class PGVectorScaleSearcher(BaseSearcher):
                     ORDER BY embedding <=> %s
                     LIMIT %s
                     """,
-                    (query_embedding, query_embedding, top_k)
+                    (query_vector, query_vector, top_k)
                 )
                 results = cur.fetchall()
             

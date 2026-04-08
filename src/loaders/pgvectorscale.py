@@ -3,6 +3,7 @@ import os
 import sys
 from typing import Any, Dict, List, Optional
 import logging
+import json
 
 sys.path.insert(0, str(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -65,39 +66,39 @@ class PGVectorScaleLoader(BaseLoader):
             
         try:
             with self.conn.cursor() as cur:
-                # Проверка расширения
-                cur.execute("SELECT 1 FROM pg_extension WHERE extname = 'vectorscale'")
-                if not cur.fetchone():
-                    logger.warning("Расширение vectorscale не найдено. Пробую создать...")
-                    cur.execute("CREATE EXTENSION IF NOT EXISTS vectorscale CASCADE")
+                cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
                 
                 # Создание таблицы
                 emb_dim = self.config['benchmark']['embedding']['dim']
                 cur.execute(f"""
-                    CREATE TABLE IF NOT EXISTS {self.table_name} (
+                    DROP TABLE IF EXISTS {self.table_name} CASCADE
+                """)
+                cur.execute(f"""
+                    CREATE TABLE {self.table_name} (
                         id SERIAL PRIMARY KEY,
                         context_id TEXT UNIQUE,
                         content TEXT,
-                        metadata JSONB,
+                        file_id TEXT,
                         embedding vector({emb_dim})
                     )
                 """)
                 
-                # Создание индекса StreamingDiskANN
-                params = self.index_params
-                cur.execute(f"""
-                    CREATE INDEX IF NOT EXISTS idx_{self.table_name}_diskann 
-                    ON {self.table_name} 
-                    USING diskann (embedding vector_cosine_ops)
-                    WITH (
-                        dims = {emb_dim},
-                        metric = cosine,
-                        max_neighbors = {params.get('max_neighbors', 50)},
-                        l_value = {params.get('l_value', 200)},
-                        buffer_size = 1000000,
-                        storage_layout = '{params.get('storage_layout', 'disk')}'
-                    )
-                """)
+                # Создание индекса для ускорения поиска
+                index_type = self.index_params.get('type', 'ivfflat')
+                if index_type == 'hnsw':
+                    cur.execute(f"""
+                        CREATE INDEX idx_{self.table_name}_embedding 
+                        ON {self.table_name} 
+                        USING hnsw (embedding vector_cosine_ops)
+                        WITH (m = {self.index_params.get('m', 16)}, ef_construction = {self.index_params.get('ef_construction', 64)})
+                    """)
+                else:
+                    cur.execute(f"""
+                        CREATE INDEX idx_{self.table_name}_embedding 
+                        ON {self.table_name} 
+                        USING ivfflat (embedding vector_cosine_ops)
+                        WITH (lists = 100)
+                    """)
                 
                 self.conn.commit()
                 self.collection_ready = True
@@ -141,22 +142,26 @@ class PGVectorScaleLoader(BaseLoader):
                 with self.conn.cursor() as cur:
                     for idx, row in batch.iterrows():
                         context_id = str(idx) if id_col == 'index' else str(row.get(id_col, idx))
+                        embedding = row.get('embedding')
+                        
+                        # Преобразуем embedding если это список
+                        if isinstance(embedding, list):
+                            embedding = embedding
+                        elif hasattr(embedding, 'tolist'):
+                            embedding = embedding.tolist()
                         
                         cur.execute(
                             f"""
                             INSERT INTO {self.table_name} 
-                            (context_id, content, metadata, embedding)
+                            (context_id, content, file_id, embedding)
                             VALUES (%s, %s, %s, %s)
                             ON CONFLICT (context_id) DO NOTHING
                             """,
                             (
                                 context_id,
                                 str(row.get(cols['context_column'], '')),
-                                {
-                                    "file": row.get(cols.get('file_column', ''), ''),
-                                    "answer": row.get(cols.get('answer_column', ''), '')
-                                },
-                                row['embedding'] if 'embedding' in row else None
+                                str(row.get(cols.get('file_column', ''), '')),
+                                embedding
                             )
                         )
                     

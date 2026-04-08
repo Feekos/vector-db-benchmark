@@ -42,6 +42,7 @@ def main():
     parser = argparse.ArgumentParser(description="🚀 Полный пайплайн бенчмарка векторных БД")
     parser.add_argument("--skip-embed", action="store_true", help="Пропустить генерацию эмбеддингов")
     parser.add_argument("--skip-load", action="store_true", help="Пропустить загрузку данных в БД")
+    parser.add_argument("--skip-bench", action="store_true", help="Пропустить запуск бенчмарка")
     parser.add_argument("--sample", type=int, help="Ограничить число тестовых запросов (для быстрой проверки)")
     parser.add_argument("--config", default="config.yaml", help="Путь к конфигу")
     args = parser.parse_args()
@@ -73,12 +74,15 @@ def main():
         print("⏭ Пропуск загрузки данных")
 
     # Запуск бенчмарка
-    bench_cmd = f"python -m src.benchmark --config {args.config}"
-    if args.sample:
-        bench_cmd += f" --sample {args.sample}"
-    
-    if not run_cmd(bench_cmd, "Поисковый бенчмарк"):
-        sys.exit(1)
+    if not args.skip_bench:
+        bench_cmd = f"python -m src.benchmark --config {args.config}"
+        if args.sample:
+            bench_cmd += f" --sample {args.sample}"
+        
+        if not run_cmd(bench_cmd, "Поисковый бенчмарк"):
+            sys.exit(1)
+    else:
+        print("⏭ Пропуск бенчмарка")
 
     # Итоговые результаты
     print("\n" + "="*60)

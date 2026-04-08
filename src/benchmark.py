@@ -130,6 +130,16 @@ class BenchmarkRunner:
         logger.info(f"📦 Загрузка данных: {dataset_path}")
         df = pd.read_pickle(dataset_path)
         question_emb = np.load(dataset_path.replace('dataset_processed.pkl', 'question_embeddings.npy'))
+
+        expected_dim = self.config['benchmark']['embedding']['dim']
+        if question_emb.ndim != 2 or question_emb.shape[1] != expected_dim:
+            raise ValueError(
+                f"Embedding dimension mismatch: config={expected_dim}, loaded={question_emb.shape if question_emb.ndim == 2 else question_emb.shape}"
+            )
+        if len(df) != len(question_emb):
+            raise ValueError(
+                f"Dataset size mismatch: data rows={len(df)}, embeddings={len(question_emb)}"
+            )
         
         # Ground truth IDs (используем индекс строки как ID контекста)
         ground_truth_ids = [str(idx) for idx in df.index]
@@ -196,11 +206,11 @@ class BenchmarkRunner:
         lines.append("## 💡 Рекомендации на основе прогонов")
         lines.append("")
         if reports:
-            best_recall = max(reports, key=lambda x: x['metrics']['recall@10'])
+            best_recall = max(reports, key=lambda x: x['metrics']['recall_at_10'])
             best_latency = min(reports, key=lambda x: x['metrics']['latency_p99'])
             best_qps = max(reports, key=lambda x: x['metrics']['qps'])
             
-            lines.append(f"- 🎯 Лучший Recall@10: **{best_recall['database']}** ({best_recall['metrics']['recall@10']:.3f})")
+            lines.append(f"- 🎯 Лучший Recall@10: **{best_recall['database']}** ({best_recall['metrics']['recall_at_10']:.3f})")
             lines.append(f"- ⚡ Лучшая p99 latency: **{best_latency['database']}** ({best_latency['metrics']['latency_p99']:.2f} ms)")
             lines.append(f"- 🚀 Лучший QPS: **{best_qps['database']}** ({best_qps['metrics']['qps']:.1f})")
         
@@ -211,7 +221,7 @@ class BenchmarkRunner:
 def main():
     parser = argparse.ArgumentParser(description="Запуск бенчмарка векторных БД")
     parser.add_argument("--config", default="config.yaml", help="Путь к config.yaml")
-    parser.add_argument("--data", default="data/processed", help="Директория с обработанными данными")
+    parser.add_argument("--data", default="data/processed/dataset_processed.pkl", help="Путь к обработанным данным (pickle)")
     parser.add_argument("--output", default=None, help="Директория для результатов (авто если не указан)")
     parser.add_argument("--sample", type=int, default=None, help="Ограничить количество тестовых запросов")
     
@@ -221,7 +231,7 @@ def main():
     config = load_config(args.config)
     
     # Определение путей
-    dataset_path = os.path.join(args.data, "dataset_processed.pkl")
+    dataset_path = args.data
     output_dir = args.output or os.path.join(
         config['benchmark']['output']['results_dir'],
         f"benchmark_{get_timestamp()}"
@@ -235,7 +245,7 @@ def main():
     print("\n" + "="*60)
     print("✅ БЕНЧМАРК ЗАВЕРШЕН")
     print(f"📁 Результаты: {output_dir}")
-    print("📄 Отчёт: {}/report.md".format(output_dir))
+    print(f"📄 Отчёт: {output_dir}/report.md")
     print("="*60)
     
     # Вывод сводной таблицы
@@ -243,7 +253,7 @@ def main():
         print("\n📊 Краткие результаты:")
         for r in results['reports']:
             m = r['metrics']
-            print(f"  {r['database']:15} | R@10: {m['recall@10']:.3f} | p99: {m['latency_p99']:6.1f}ms | QPS: {m['qps']:6.1f}")
+            print(f"  {r['database']:15} | R@10: {m['recall_at_10']:.3f} | p99: {m['latency_p99']:6.1f}ms | QPS: {m['qps']:6.1f}")
 
 
 if __name__ == "__main__":

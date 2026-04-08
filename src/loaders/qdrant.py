@@ -3,6 +3,7 @@ import os
 import sys
 from typing import Any, Dict, List, Optional
 import logging
+import numpy as np
 
 sys.path.insert(0, str(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -36,7 +37,8 @@ class QdrantLoader(BaseLoader):
             self.client = QdrantClient(
                 host=self.db_config.get('host', 'localhost'),
                 port=self.db_config.get('port', 6333),
-                grpc=self.db_config.get('grpc', True)
+                prefer_grpc=False,  # Используем HTTP для загрузки
+                check_compatibility=False
             )
             # Проверка соединения
             self.client.get_collections()
@@ -124,6 +126,7 @@ class QdrantLoader(BaseLoader):
         }
         
         cols = self.config['benchmark']['datasets'][0]
+        emb_dim = self.config['benchmark']['embedding']['dim']
         total = len(df)
         
         for i in range(0, total, batch_size):
@@ -133,27 +136,49 @@ class QdrantLoader(BaseLoader):
             try:
                 # Подготовка точек для вставки
                 points = []
+                batch_errors = 0
+                
                 for idx, row in batch.iterrows():
+                    # Преобразуем embedding в список
+                    embedding = row['embedding']
+                    if isinstance(embedding, list):
+                        vector = embedding
+                    elif hasattr(embedding, 'tolist'):
+                        vector = embedding.tolist()
+                    else:
+                        vector = list(embedding) if embedding is not None else []
+                    
+                    # Проверяем что вектор имеет правильный размер
+                    if len(vector) != emb_dim:
+                        batch_errors += 1
+                        continue
+                    
+                    point_id = int(idx) if isinstance(idx, (int, np.integer)) else hash(str(idx)) % (2**63)
                     points.append(
                         models.PointStruct(
-                            id=int(idx) if isinstance(idx, (int, np.integer)) else hash(str(idx)) % (2**63),
-                            vector=row['embedding'] if isinstance(row['embedding'], list) else row['embedding'].tolist(),
+                            id=point_id,
+                            vector=vector,
                             payload={
                                 "context_id": str(idx),
                                 "content": str(row.get(cols['context_column'], '')),
                                 "file_id": str(row.get(cols.get('file_column', ''), '')),
-                                "answer": str(row.get(cols.get('answer_column'), ''))
+                                "answer": str(row.get(cols.get('answer_column', ''), ''))
                             }
                         )
                     )
                 
-                # Вставка с ожиданием завершения
-                self.client.upsert(
-                    collection_name=self.collection_name,
-                    points=points,
-                    wait=True
-                )
-                stats["inserted"] += len(batch)
+                stats["errors"] += batch_errors
+                
+                if points:
+                    logger.info(f"Qdrant batch {i}: trying to insert {len(points)} points (skipped {batch_errors})")
+                    self.client.upsert(
+                        collection_name=self.collection_name,
+                        points=points,
+                        wait=True
+                    )
+                    stats["inserted"] += len(points)
+                else:
+                    logger.warning(f"Qdrant batch {i}: no valid points to insert (all {len(batch)} skipped)")
                 
             except Exception as e:
                 logger.error(f"Ошибка при вставке батча {i}: {e}")

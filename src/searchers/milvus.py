@@ -28,6 +28,7 @@ class MilvusSearcher(BaseSearcher):
         
     def connect(self) -> bool:
         if not MILVUS_AVAILABLE:
+            logger.error("Milvus недоступен: пакет pymilvus не установлен")
             return False
         try:
             connections.connect(
