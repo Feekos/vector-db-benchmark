@@ -8,7 +8,7 @@ benchmark:
       file_column: "Название файла"
   
   embedding:
-    model: "intfloat/multilingual-e5-large-instruct"
+    model: "Octen-Embedding-0.6B"
     dim: 1024
     normalize: true
     batch_size: 32
