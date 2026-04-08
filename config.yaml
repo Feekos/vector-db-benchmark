@@ -8,12 +8,12 @@ benchmark:
       file_column: "Название файла"
   
   embedding:
-    model: "cointegrated/rubert-tiny2"
+    model: "intfloat/multilingual-e5-large-instruct"
     dim: 1024
     normalize: true
     batch_size: 32
     device: "cuda"
-  
+    huggingface_token: ${HF_TOKEN}  
   search:
     top_k: 10
     metrics: ["recall@1", "recall@5", "recall@10", "MRR", "latency"]
@@ -24,20 +24,25 @@ benchmark:
       enabled: true
       host: "localhost"
       port: 5432
+      database: "rag_benchmark"
+      user: "postgres"
+      password: "benchmark_pass"
+      table_name: "wiki_chunks"
       index:
-        type: "diskann"
+        type: "hnsw"
         params:
-          max_neighbors: 50
-          l_value: 200
+          m: 16
+          ef_construction: 200
           ef_search: 200
-          storage_layout: "disk"
     
     milvus:
       enabled: true
       host: "localhost"
       port: 19530
+      collection_name: "ru_rag_test"
       index:
         type: "HNSW"
+        metric_type: "COSINE"
         params:
           M: 16
           efConstruction: 200
@@ -48,13 +53,15 @@ benchmark:
       host: "localhost"
       port: 6333
       grpc: true
+      collection_name: "ru_rag_test"
       index:
         type: "HNSW"
         params:
           m: 16
           ef_construct: 200
           ef_search: 200
-        quantization: "binary"
+        quantization: "none"
+        on_disk: false
 
   output:
     results_dir: "data/results"
