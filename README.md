@@ -26,14 +26,8 @@ mkdir -p data/raw
 docker compose up -d
 # Подождите 3-5 минут пока все сервисы станут healthy
 
-# 4. Генерация эмбеддингов
-python -m src.embed --config config.yaml
+# 4. Запуск пайплайна для бенчмарка от эмбеддинга до поиска по базам данных с генерацией результатов
+python main.py --config config.yaml
 
-# 5. Загрузка данных в БД
-python -m src.loaders.run_all --config config.yaml
-
-# 6. Запуск бенчмарка
-python -m src.benchmark --config config.yaml --output data/results/test_run/
-
-# 7. Просмотр результатов
+# 5. Просмотр результатов
 cat data/results/test_run/report.md
